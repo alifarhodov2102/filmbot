@@ -2,28 +2,43 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def get_join_inline(channel_url: str):
-    """Creates the 'Join Channel' buttons."""
+    """Kanalga a'zo bo'lish tugmalarini yaratadi."""
     builder = InlineKeyboardBuilder()
     
-    # Button to open the channel
+    # Kanalga o'tish tugmasi
     builder.row(InlineKeyboardButton(
-        text="Join Channel 📢", 
+        text="Kanalga a'zo bo'lish 📢", 
         url=channel_url)
     )
     
-    # Button for user to click after joining
+    # Tasdiqlash tugmasi
     builder.row(InlineKeyboardButton(
-        text="I have joined ✅", 
+        text="Tasdiqlash ✅", 
         callback_data="check_subs")
     )
     
     return builder.as_markup()
 
-def admin_menu():
-    """Simple buttons for the Admin Panel."""
+def get_rating_keyboard(movie_code: str):
+    """Kino uchun 1 dan 5 gacha yulduzcha rating tugmalarini yaratadi."""
     builder = InlineKeyboardBuilder()
     
-    builder.row(InlineKeyboardButton(text="📢 Broadcast", callback_data="admin_broadcast"))
-    builder.row(InlineKeyboardButton(text="📊 Stats", callback_data="admin_stats"))
+    # 1 dan 5 gacha bo'lgan yulduzchalarni bitta qatorga teradi
+    for i in range(1, 6):
+        builder.add(InlineKeyboardButton(
+            text=f"{i} ⭐", 
+            callback_data=f"rate_{i}_{movie_code}")
+        )
+    
+    # Tugmalarni chiroyli ko'rinishga keltirish (har bir qatorda nechtadan bo'lishi)
+    builder.adjust(5) 
+    return builder.as_markup()
+
+def admin_menu():
+    """Admin paneli uchun asosiy tugmalar."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(text="📢 Reklama yuborish", callback_data="admin_broadcast"))
+    builder.row(InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats"))
     
     return builder.as_markup()
