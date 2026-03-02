@@ -8,10 +8,19 @@ db = Database("bot_data.db")
 
 @router.message(CommandStart())
 async def start_handler(message: Message):
-    # Save user to DB for future broadcasts
+    # Foydalanuvchini bazaga qo'shish (Ads/Broadcast uchun)
     await db.add_user(message.from_user.id, message.from_user.username)
-    await message.answer("👋 **Welcome to the Film Bot!**\n\n"
-                         "Send me a movie code to get your video.")
+    
+    welcome_text = (
+        f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
+        "🎬 <b>KinoBot-ga xush kelibsiz!</b>\n\n"
+        "Bu yerda siz eng so'nggi va eng sara filmlarni topishingiz mumkin. "
+        "Kinolarni ko'rish uchun <b>kino kodini</b> yuboring.\n\n"
+        "📌 <i>Masalan: 505</i>\n\n"
+        "🚀 <b>Marhamat, kodingizni kiriting:</b>"
+    )
+    
+    await message.answer(welcome_text)
 
 @router.message(F.text)
 async def movie_request(message: Message):
@@ -20,7 +29,10 @@ async def movie_request(message: Message):
     
     if movie:
         file_id, caption = movie
-        # Use send_copy or send_video to send the stored file_id
         await message.answer_video(video=file_id, caption=caption)
     else:
-        await message.answer("❌ **Invalid Code.** Please check the code and try again.")
+        await message.answer(
+            "❌ <b>Kechirasiz, bunday kod topilmadi.</b>\n\n"
+            "Iltimos, kodni to'g'ri kiritganingizni tekshirib ko'ring yoki "
+            "kanaldan yangi kodlarni qidiring!"
+        )
