@@ -42,7 +42,7 @@ class SubscriptionMiddleware(BaseMiddleware):
             chat = await bot.get_chat(CHANNEL_ID)
             invite_link = chat.invite_link or f"https://t.me/{chat.username}"
         except Exception:
-            invite_link = "https://t.me/+QfKkh6EoikJlYzRi" # Fallback link
+            invite_link = "https://t.me/+R80-yTSvEb4yZDYy" # Fallback link
 
         await event.answer(
             "❗ <b>Access Denied</b>\n\n"
