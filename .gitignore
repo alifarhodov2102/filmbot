@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# Python environment & cache
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
