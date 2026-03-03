@@ -4,44 +4,53 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-# Import our custom modules
+# Maxsus modullarni import qilish
 from config import BOT_TOKEN, DB_NAME
 from database import Database
 from middlewares import SubscriptionMiddleware
 from handlers import admin, user
 
+# Ma'lumotlar bazasini global darajada e'lon qilish
+db = Database(DB_NAME)
+
 async def main():
-    # Setup logging to see what's happening in the console
-    logging.basicConfig(level=logging.INFO)
+    # 1. Loggingni sozlash (Konsolda jarayonlarni kuzatish uchun)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    )
     
-    # Initialize Bot and Dispatcher
-    # DefaultBotProperties ensures all messages can use HTML formatting
+    # 2. Ma'lumotlar bazasi jadvallarini yaratish
+    # Bu qator OperationalError: no such table xatosini butunlay yo'qotadi
+    await db.create_tables()
+    
+    # 3. Bot va Dispatcherni ishga tushirish
     bot = Bot(
         token=BOT_TOKEN, 
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()
     
-    # 1. Initialize Database Tables
-    db = Database(DB_NAME)
-    await db.create_tables()
-
-    # 2. Register Middlewares
-    # This checks subscription BEFORE any handler is called
+    # 4. Middleware-larni ro'yxatdan o'tkazish
+    # Obunani tekshirish har bir xabardan oldin ishlaydi
     dp.message.outer_middleware(SubscriptionMiddleware())
 
-    # 3. Register Routers (Order matters: Admin first, then User)
+    # 5. Routerni ulash (Tartib muhim: Admin birinchi, keyin User)
     dp.include_router(admin.router)
     dp.include_router(user.router)
 
-    # 4. Remove old updates and start listening
+    # 6. Eski xabarlarni (updates) tozalash va pollingni boshlash
     await bot.delete_webhook(drop_pending_updates=True)
-    print("🚀 Bot is running 24/7...")
-    await dp.start_polling(bot)
+    
+    print("🚀 Bot muvaffaqiyatli ishga tushdi va 24/7 rejimida ishlamoqda...")
+    
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logging.info("Bot stopped!")
-        
+        logging.info("Bot ishdan to'xtatildi!")
