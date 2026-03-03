@@ -2,11 +2,15 @@ from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from database import Database
-from config import CHANNELS
+# config dan CHANNELS va DB_NAME ni import qilamiz
+from config import CHANNELS, DB_NAME 
 from keyboards import get_rating_keyboard
 
 router = Router()
-db = Database("bot_data.db")
+
+# MUHIM: Bu yerda qat'iy ravishda config dagi DB_NAME ishlatilishi shart!
+# Shunda u Railway Volume yo'lini (/app/data/...) ko'radi.
+db = Database(DB_NAME)
 
 @router.message(CommandStart())
 async def start_handler(message: Message):
@@ -27,7 +31,7 @@ async def verify_subscription(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
     all_joined = True
     
-    # MUHIM: Foydalanuvchi rostdan ham hamma kanalga a'zo bo'lganini tekshiramiz
+    # Foydalanuvchi barcha kanallarga a'zo bo'lganini tekshirish
     for channel_id in CHANNELS:
         try:
             member = await bot.get_chat_member(chat_id=channel_id, user_id=user_id)
@@ -39,15 +43,13 @@ async def verify_subscription(callback: CallbackQuery, bot: Bot):
             break
 
     if all_joined:
-        # Agar hamma kanalga a'zo bo'lgan bo'lsa
         await callback.answer("Tabriklaymiz, hamma kanallarga a'zo bo'ldingiz! ✅", show_alert=True)
-        await callback.message.delete() # Obuna so'ralgan xabarni o'chirish
+        await callback.message.delete() 
         await callback.message.answer("Endi kino kodini qaytadan yuborishingiz mumkin. 🍿")
     else:
-        # Agar hali ham a'zo bo'lmagan kanali bo'lsa
         await callback.answer("Siz hali barcha kanallarga a'zo bo'lmadingiz! ❌", show_alert=True)
 
-@router.message(F.text.regexp(r'^\d+$')) # Faqat raqamlardan iborat xabarlarga javob beradi
+@router.message(F.text.regexp(r'^\d+$')) 
 async def movie_request(message: Message):
     code = message.text.strip()
     movie = await db.get_movie(code)
@@ -68,12 +70,13 @@ async def movie_request(message: Message):
 @router.callback_query(F.data.startswith("rate_"))
 async def handle_rating(callback: CallbackQuery):
     rating = callback.data.split("_")[1]
-    # Baholash uchun rahmat aytish
+    movie_code = callback.data.split("_")[2]
+    
+    # Reytingni bazaga saqlash
+    await db.add_rating(callback.from_user.id, movie_code, int(rating))
     await callback.answer(f"Rahmat! Siz {rating} ball berdingiz ⭐", show_alert=False)
 
-# Raqam bo'lmagan yoki noto'g'ri matnlarga javob
 @router.message(F.text)
 async def non_code_request(message: Message):
-    # Agar bu buyruq (/) bo'lmasa, ogohlantirish beradi
     if not message.text.startswith("/"):
         await message.answer("⚠️ Iltimos, faqat film kodini (raqam) yuboring.")
