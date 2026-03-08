@@ -3,6 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 
 # Maxsus modullarni import qilish
 from config import BOT_TOKEN, DB_NAME
@@ -23,20 +24,21 @@ async def main():
     
     # 3. MA'LUMOTLAR BAZASI JADVALLARINI YARATISH
     # Bu qator polling boshlanishidan OLDIN bajarilishi shart.
-    # U Railway Volume ichidagi bazada jadvallar borligini tekshiradi va yo'q bo'lsa yaratadi.
     logging.info("Ma'lumotlar bazasi jadvallari tekshirilmoqda...")
     await db.create_tables()
     logging.info("Baza tayyor!")
     
     # 4. Bot va Dispatcherni ishga tushirish
+    # MemoryStorage admin paneldagi jarayonlarni (FSM) xotirada saqlash uchun
+    storage = MemoryStorage()
     bot = Bot(
         token=BOT_TOKEN, 
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
-    dp = Dispatcher()
+    dp = Dispatcher(storage=storage)
     
     # 5. Middleware-larni ro'yxatdan o'tkazish
-    # Bu qism foydalanuvchi kino kodini yuborganda obunani tekshiradi
+    # Foydalanuvchi kino kodini yuborganda obunani tekshiradi
     dp.message.outer_middleware(SubscriptionMiddleware())
 
     # 6. Routerni ulash (Tartib juda muhim: Admin birinchi, keyin User)
