@@ -5,7 +5,7 @@ class Database:
         self.db_path = db_path
 
     async def create_tables(self):
-        """Jadvallarni yaratish va mavjud bazani yangilash (Migration)."""
+        """Jadvallarni yaratish va mavjud bazani yangilash."""
         async with aiosqlite.connect(self.db_path) as db:
             # 1. Users jadvali
             await db.execute("""
@@ -26,7 +26,7 @@ class Database:
                 )
             """)
 
-            # --- MIGRATION: is_series ustunini tekshirish ---
+            # Migration: is_series ustunini tekshirish
             try:
                 await db.execute("ALTER TABLE movies ADD COLUMN is_series INTEGER DEFAULT 0")
                 await db.commit()
@@ -55,7 +55,7 @@ class Database:
                 )
             """)
 
-            # 5. Favorites jadvali (Mening kinolarim)
+            # 5. Favorites jadvali (Mening animelarim)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS favorites (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,12 +76,6 @@ class Database:
             )
             await db.commit()
 
-    async def get_all_users(self):
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute("SELECT user_id FROM users") as cursor:
-                rows = await cursor.fetchall()
-                return [row[0] for row in rows]
-
     async def get_stats(self):
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute("SELECT COUNT(*) FROM users") as c1:
@@ -90,7 +84,7 @@ class Database:
                 m_count = (await c2.fetchone())[0]
             return u_count, m_count
 
-    # --- Kino va Serial metodlari ---
+    # --- Anime va Serial metodlari ---
     async def add_movie(self, code: str, file_id: str, caption: str, is_series: int = 0):
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
@@ -105,6 +99,31 @@ class Database:
                 "INSERT INTO episodes (movie_code, part_number, file_id) VALUES (?, ?, ?)",
                 (code, part, file_id)
             )
+            await db.commit()
+
+    async def delete_episode(self, movie_code: str, part_num: int):
+        """Qismni o'chirish va qolganlarini qayta tartiblash (Reset)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # 1. Tanlangan qismni o'chirish
+            await db.execute(
+                "DELETE FROM episodes WHERE movie_code = ? AND part_number = ?",
+                (movie_code, part_num)
+            )
+            await db.commit()
+
+            # 2. Qolgan qismlarni tartib bilan olish
+            async with db.execute(
+                "SELECT id FROM episodes WHERE movie_code = ? ORDER BY part_number ASC",
+                (movie_code,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+
+            # 3. Qayta tartiblash (Re-indexing)
+            for index, row in enumerate(rows, start=1):
+                await db.execute(
+                    "UPDATE episodes SET part_number = ? WHERE id = ?",
+                    (index, row[0])
+                )
             await db.commit()
 
     async def get_movie(self, code: str):
@@ -127,18 +146,8 @@ class Database:
             await db.execute("DELETE FROM movies WHERE movie_code = ?", (code,))
             await db.commit()
 
-    # --- Reyting metodlari ---
-    async def add_rating(self, user_id: int, movie_code: str, rating: int):
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "INSERT INTO ratings (user_id, movie_code, rating) VALUES (?, ?, ?)",
-                (user_id, movie_code, rating)
-            )
-            await db.commit()
-
-    # --- Favorites (Mening kinolarim) metodlari ---
+    # --- Favorites (Mening animelarim) ---
     async def add_to_favorites(self, user_id: int, movie_code: str):
-        """Kinoni sevimlilarga qo'shish."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO favorites (user_id, movie_code) VALUES (?, ?)",
@@ -147,19 +156,9 @@ class Database:
             await db.commit()
 
     async def get_favorites(self, user_id: int):
-        """Foydalanuvchining barcha sevimlilarini olish."""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 "SELECT movie_code FROM favorites WHERE user_id = ?", (user_id,)
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [row[0] for row in rows]
-
-    async def remove_from_favorites(self, user_id: int, movie_code: str):
-        """Kinoni sevimlilardan o'chirish."""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "DELETE FROM favorites WHERE user_id = ? AND movie_code = ?",
-                (user_id, movie_code)
-            )
-            await db.commit()
