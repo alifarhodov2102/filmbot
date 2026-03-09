@@ -5,14 +5,12 @@ def get_join_inline(invite_links: list):
     """Har bir kanal uchun alohida a'zo bo'lish tugmalarini yaratadi."""
     builder = InlineKeyboardBuilder()
     
-    # Ro'yxatdagi har bir kanal linki uchun alohida tugma
     for i, link in enumerate(invite_links, 1):
         builder.row(InlineKeyboardButton(
             text=f"{i}-kanalga a'zo bo'lish 📢", 
             url=link)
         )
     
-    # Tasdiqlash tugmasi
     builder.row(InlineKeyboardButton(
         text="Tasdiqlash ✅", 
         callback_data="check_subs")
@@ -22,32 +20,72 @@ def get_join_inline(invite_links: list):
 
 def get_episodes_kb(movie_code: str, episodes: list):
     """
-    Serial qismlarini dinamik ravishda chiqaruvchi tugmalar.
-    episodes: [(part_number, file_id), ...] shaklida keladi.
+    Serial qismlari tugmalari va ularning pastidagi funksional tugmalar.
     """
     builder = InlineKeyboardBuilder()
     
+    # Qismlar tugmalarini terish (1, 2, 3...)
     for part_num, _ in episodes:
         builder.add(InlineKeyboardButton(
             text=f"{part_num}", 
             callback_data=f"ep_{movie_code}_{part_num}")
         )
     
-    # Har qatorda 5 tadan qism tugmasi bo'ladi
-    builder.adjust(5) 
+    builder.adjust(5) # Qismlar 5 tadan qatorda
+    
+    # Pastki funksional tugmalar qatori
+    builder.row(
+        InlineKeyboardButton(text="❌", callback_data="close_msg"),
+        InlineKeyboardButton(text="Baholash ⭐", callback_data=f"show_rate_{movie_code}")
+    )
+    
+    # "Mening kinolarim" tugmasi
+    builder.row(InlineKeyboardButton(
+        text="❤️ Mening kinolarimga qo'shish", 
+        callback_data=f"fav_add_{movie_code}")
+    )
+    
+    return builder.as_markup()
+
+def get_movie_kb(movie_code: str):
+    """
+    Oddiy kino pastidagi asosiy tugmalar.
+    """
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(
+        InlineKeyboardButton(text="❌", callback_data="close_msg"),
+        InlineKeyboardButton(text="Baholash ⭐", callback_data=f"show_rate_{movie_code}")
+    )
+    
+    builder.row(InlineKeyboardButton(
+        text="❤️ Mening kinolarimga qo'shish", 
+        callback_data=f"fav_add_{movie_code}")
+    )
+    
     return builder.as_markup()
 
 def get_rating_keyboard(movie_code: str):
-    """Kino uchun 1 dan 5 gacha yulduzcha rating tugmalarini yaratadi."""
+    """
+    Baholash bosilganda chiqadigan yulduzcha tugmalari.
+    Pastda orqaga qaytish (Back) tugmasi bilan.
+    """
     builder = InlineKeyboardBuilder()
     
+    # Yulduzchalarni bitta qatorga 5 ta qilib terish
     for i in range(1, 6):
         builder.add(InlineKeyboardButton(
             text=f"{i} ⭐", 
             callback_data=f"rate_{i}_{movie_code}")
         )
+    builder.adjust(5)
     
-    builder.adjust(5) 
+    # Orqaga qaytish tugmasi
+    builder.row(InlineKeyboardButton(
+        text="Back ⬅️", 
+        callback_data=f"back_to_movie_{movie_code}")
+    )
+    
     return builder.as_markup()
 
 def series_confirm_kb():
@@ -67,4 +105,3 @@ def admin_menu():
     builder.row(InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats"))
     
     return builder.as_markup()
-    
