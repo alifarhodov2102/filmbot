@@ -5,9 +5,9 @@ class Database:
         self.db_path = db_path
 
     async def create_tables(self):
-        """Barcha kerakli jadvallarni (Users, Movies, Episodes, Ratings) yaratish."""
+        """Jadvallarni yaratish va mavjud bazani yangilash (Migration)."""
         async with aiosqlite.connect(self.db_path) as db:
-            # 1. Foydalanuvchilar jadvali
+            # 1. Users jadvali
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
@@ -15,8 +15,8 @@ class Database:
                     join_date DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            # 2. Kinolar va Seriallar asosi
-            # is_series: 0 - Oddiy kino, 1 - Serial
+
+            # 2. Movies jadvali (Asosi)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS movies (
                     movie_code TEXT PRIMARY KEY,
@@ -25,7 +25,16 @@ class Database:
                     is_series INTEGER DEFAULT 0
                 )
             """)
-            # 3. Serial qismlari jadvali
+
+            # --- MIGRATION: Agar eski baza bo'lsa, is_series ustunini qo'shish ---
+            try:
+                await db.execute("ALTER TABLE movies ADD COLUMN is_series INTEGER DEFAULT 0")
+                await db.commit()
+            except:
+                # Ustun allaqachon mavjud bo'lsa, xatoni o'tkazib yuboramiz
+                pass
+
+            # 3. Episodes jadvali (Serial qismlari)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS episodes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +44,8 @@ class Database:
                     FOREIGN KEY (movie_code) REFERENCES movies (movie_code) ON DELETE CASCADE
                 )
             """)
-            # 4. Baholash tizimi
+
+            # 4. Ratings jadvali
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS ratings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +82,6 @@ class Database:
 
     # --- Kino va Serial metodlari ---
     async def add_movie(self, code: str, file_id: str, caption: str, is_series: int = 0):
-        """Kino yoki Serial asosini qo'shish."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO movies (movie_code, file_id, caption, is_series) VALUES (?, ?, ?, ?)",
@@ -81,7 +90,6 @@ class Database:
             await db.commit()
 
     async def add_episode(self, code: str, part: int, file_id: str):
-        """Serialning alohida qismini qo'shish."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "INSERT INTO episodes (movie_code, part_number, file_id) VALUES (?, ?, ?)",
@@ -90,7 +98,6 @@ class Database:
             await db.commit()
 
     async def get_movie(self, code: str):
-        """Kod orqali ma'lumot olish (file_id, caption, is_series)."""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 "SELECT file_id, caption, is_series FROM movies WHERE movie_code = ?", (code,)
@@ -98,7 +105,6 @@ class Database:
                 return await cursor.fetchone()
 
     async def get_episodes(self, code: str):
-        """Serialning barcha qismlarini olish."""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 "SELECT part_number, file_id FROM episodes WHERE movie_code = ? ORDER BY part_number ASC", 
@@ -107,10 +113,8 @@ class Database:
                 return await cursor.fetchall()
 
     async def delete_movie(self, code: str):
-        """Kino/Serialni va unga tegishli barcha qismlarni o'chirish."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("DELETE FROM movies WHERE movie_code = ?", (code,))
-            # FOREIGN KEY ON DELETE CASCADE bo'lgani uchun qismlar avtomat o'chadi
             await db.commit()
 
     # --- Reyting metodlari ---
