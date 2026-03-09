@@ -35,7 +35,12 @@ async def add_start(message: Message, state: FSMContext, command: CommandObject)
     if not command.args:
         return await message.answer("❌ Kodni kiriting! Masalan: <code>/add 505</code>")
     
-    code = command.args
+    code = command.args.strip()
+    
+    # FAQAT RAQAM BO'LISHINI TEKSHIRAMIZ
+    if not code.isdigit():
+        return await message.answer("⚠️ <b>Xato!</b> Kino kodi faqat raqamlardan iborat bo'lishi kerak.")
+    
     await state.update_data(movie_code=code)
     
     await message.answer(
