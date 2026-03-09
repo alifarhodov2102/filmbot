@@ -1,6 +1,6 @@
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from database import Database
 from config import CHANNELS, DB_NAME 
 from keyboards import get_rating_keyboard, get_episodes_kb, get_movie_kb
@@ -20,6 +20,26 @@ async def start_handler(message: Message):
         "🚀 <b>Marhamat, kodingizni kiriting:</b>"
     )
     await message.answer(welcome_text)
+
+# --- SHAXSIY TO'PLAM (/my) ---
+
+@router.message(Command("my"))
+async def my_movies_handler(message: Message):
+    """Foydalanuvchi saqlab qo'ygan kinolar ro'yxati."""
+    favorites = await db.get_favorites(message.from_user.id)
+    
+    if not favorites:
+        return await message.answer(
+            "📭 <b>Sizning to'plamingiz bo'sh.</b>\n\n"
+            "Kinolarni ❤️ tugmasi orqali saqlashingiz mumkin."
+        )
+    
+    text = "❤️ <b>Siz saqlagan kinolar ro'yxati:</b>\n\n"
+    for code in favorites:
+        text += f"🎬 Kino kodi: <code>{code}</code>\n"
+    
+    text += "\n🍿 <i>Ko'rish uchun kodni yuboring!</i>"
+    await message.answer(text)
 
 # --- KLAVIATURA BOSHQARUVI ---
 
@@ -109,7 +129,6 @@ async def handle_rating(callback: CallbackQuery):
     
     await db.add_rating(callback.from_user.id, movie_code, int(rating))
     
-    # Asosiy tugmalarga qaytarish
     movie = await db.get_movie(movie_code)
     kb = get_episodes_kb(movie_code, await db.get_episodes(movie_code)) if movie[2] else get_movie_kb(movie_code)
     
@@ -117,9 +136,11 @@ async def handle_rating(callback: CallbackQuery):
     await callback.answer(f"Rahmat! Siz {rating} ball berdingiz ⭐", show_alert=False)
 
 @router.callback_query(F.data.startswith("fav_add_"))
-async def handle_favorites(callback: CallbackQuery):
-    """Mening kinolarimga qo'shish (Hozircha faqat xabar)."""
-    await callback.answer("❤️ Mening kinolarimga qo'shildi!", show_alert=True)
+async def handle_favorites_addition(callback: CallbackQuery):
+    """Mening kinolarimga rostdan qo'shish."""
+    movie_code = callback.data.split("_")[2]
+    await db.add_to_favorites(callback.from_user.id, movie_code)
+    await callback.answer("✅ 'Mening kinolarim' ro'yxatiga qo'shildi!", show_alert=True)
 
 # --- OBUNA TEKSHIRUV ---
 

@@ -33,16 +33,20 @@ def get_episodes_kb(movie_code: str, episodes: list):
     
     builder.adjust(5) # Qismlar 5 tadan qatorda
     
-    # Pastki funksional tugmalar qatori
+    # Markaziy boshqaruv tugmalari
     builder.row(
         InlineKeyboardButton(text="❌", callback_data="close_msg"),
         InlineKeyboardButton(text="Baholash ⭐", callback_data=f"show_rate_{movie_code}")
     )
     
-    # "Mening kinolarim" tugmasi
+    # Sevimlilar va Ulashish tugmalari
     builder.row(InlineKeyboardButton(
         text="❤️ Mening kinolarimga qo'shish", 
         callback_data=f"fav_add_{movie_code}")
+    )
+    builder.row(InlineKeyboardButton(
+        text="Ulashish 🚀", 
+        switch_inline_query=f"\nKino kodi: {movie_code}")
     )
     
     return builder.as_markup()
@@ -63,16 +67,19 @@ def get_movie_kb(movie_code: str):
         callback_data=f"fav_add_{movie_code}")
     )
     
+    builder.row(InlineKeyboardButton(
+        text="Ulashish 🚀", 
+        switch_inline_query=f"\nKino kodi: {movie_code}")
+    )
+    
     return builder.as_markup()
 
 def get_rating_keyboard(movie_code: str):
     """
     Baholash bosilganda chiqadigan yulduzcha tugmalari.
-    Pastda orqaga qaytish (Back) tugmasi bilan.
     """
     builder = InlineKeyboardBuilder()
     
-    # Yulduzchalarni bitta qatorga 5 ta qilib terish
     for i in range(1, 6):
         builder.add(InlineKeyboardButton(
             text=f"{i} ⭐", 
@@ -80,7 +87,6 @@ def get_rating_keyboard(movie_code: str):
         )
     builder.adjust(5)
     
-    # Orqaga qaytish tugmasi
     builder.row(InlineKeyboardButton(
         text="Back ⬅️", 
         callback_data=f"back_to_movie_{movie_code}")

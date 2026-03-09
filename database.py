@@ -16,7 +16,7 @@ class Database:
                 )
             """)
 
-            # 2. Movies jadvali (Asosi)
+            # 2. Movies jadvali
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS movies (
                     movie_code TEXT PRIMARY KEY,
@@ -26,12 +26,11 @@ class Database:
                 )
             """)
 
-            # --- MIGRATION: Agar eski baza bo'lsa, is_series ustunini qo'shish ---
+            # --- MIGRATION: is_series ustunini tekshirish ---
             try:
                 await db.execute("ALTER TABLE movies ADD COLUMN is_series INTEGER DEFAULT 0")
                 await db.commit()
             except:
-                # Ustun allaqachon mavjud bo'lsa, xatoni o'tkazib yuboramiz
                 pass
 
             # 3. Episodes jadvali (Serial qismlari)
@@ -52,6 +51,17 @@ class Database:
                     user_id INTEGER,
                     movie_code TEXT,
                     rating INTEGER,
+                    FOREIGN KEY (movie_code) REFERENCES movies (movie_code) ON DELETE CASCADE
+                )
+            """)
+
+            # 5. Favorites jadvali (Mening kinolarim)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS favorites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    movie_code TEXT,
+                    UNIQUE(user_id, movie_code),
                     FOREIGN KEY (movie_code) REFERENCES movies (movie_code) ON DELETE CASCADE
                 )
             """)
@@ -123,5 +133,33 @@ class Database:
             await db.execute(
                 "INSERT INTO ratings (user_id, movie_code, rating) VALUES (?, ?, ?)",
                 (user_id, movie_code, rating)
+            )
+            await db.commit()
+
+    # --- Favorites (Mening kinolarim) metodlari ---
+    async def add_to_favorites(self, user_id: int, movie_code: str):
+        """Kinoni sevimlilarga qo'shish."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO favorites (user_id, movie_code) VALUES (?, ?)",
+                (user_id, movie_code)
+            )
+            await db.commit()
+
+    async def get_favorites(self, user_id: int):
+        """Foydalanuvchining barcha sevimlilarini olish."""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT movie_code FROM favorites WHERE user_id = ?", (user_id,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [row[0] for row in rows]
+
+    async def remove_from_favorites(self, user_id: int, movie_code: str):
+        """Kinoni sevimlilardan o'chirish."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "DELETE FROM favorites WHERE user_id = ? AND movie_code = ?",
+                (user_id, movie_code)
             )
             await db.commit()
