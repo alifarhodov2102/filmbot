@@ -67,3 +67,4 @@ def admin_menu():
     builder.row(InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats"))
     
     return builder.as_markup()
+    
