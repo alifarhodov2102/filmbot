@@ -21,11 +21,31 @@ async def start_handler(message: Message):
     )
     await message.answer(welcome_text)
 
+# --- SAHIFALASH (PAGINATION) HANDLER ---
+
+@router.callback_query(F.data.startswith("pg_"))
+async def handle_pagination(callback: CallbackQuery):
+    """Serial qismlari sahifasini yangilash."""
+    _, movie_code, page = callback.data.split("_")
+    page = int(page)
+    
+    episodes = await db.get_episodes(movie_code)
+    
+    if episodes:
+        await callback.message.edit_reply_markup(
+            reply_markup=get_episodes_kb(movie_code, episodes, page)
+        )
+    await callback.answer()
+
+@router.callback_query(F.data == "ignore")
+async def ignore_callback(callback: CallbackQuery):
+    """Hech narsa qilmaydigan tugmalar uchun."""
+    await callback.answer()
+
 # --- SHAXSIY TO'PLAM (/my) ---
 
 @router.message(Command("my"))
 async def my_movies_handler(message: Message):
-    """Foydalanuvchi saqlab qo'ygan kinolar ro'yxati."""
     favorites = await db.get_favorites(message.from_user.id)
     
     if not favorites:
@@ -45,13 +65,11 @@ async def my_movies_handler(message: Message):
 
 @router.callback_query(F.data == "close_msg")
 async def close_message(callback: CallbackQuery):
-    """Xabarni o'chirish (❌ tugmasi)."""
     await callback.message.delete()
     await callback.answer()
 
 @router.callback_query(F.data.startswith("show_rate_"))
 async def show_rating_options(callback: CallbackQuery):
-    """Baholash tugmasi bosilganda yulduzchalarni chiqarish."""
     movie_code = callback.data.split("_")[2]
     await callback.message.edit_reply_markup(
         reply_markup=get_rating_keyboard(movie_code)
@@ -60,13 +78,12 @@ async def show_rating_options(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("back_to_movie_"))
 async def back_to_main_kb(callback: CallbackQuery):
-    """Baholashdan asosiy tugmalarga qaytish (Back ⬅️)."""
     movie_code = callback.data.split("_")[3]
     movie = await db.get_movie(movie_code)
     
-    if movie and movie[2]: # Agar serial bo'lsa
+    if movie and movie[2]: # Serial bo'lsa
         episodes = await db.get_episodes(movie_code)
-        kb = get_episodes_kb(movie_code, episodes)
+        kb = get_episodes_kb(movie_code, episodes, page=0)
     else:
         kb = get_movie_kb(movie_code)
         
@@ -77,7 +94,6 @@ async def back_to_main_kb(callback: CallbackQuery):
 
 @router.message(F.text.regexp(r'^\d+$')) 
 async def movie_request(message: Message):
-    """Kod yuborilganda kino yoki serialni ko'rsatish."""
     code = message.text.strip()
     movie = await db.get_movie(code) 
     
@@ -85,15 +101,13 @@ async def movie_request(message: Message):
         file_id, caption, is_series = movie
         
         if is_series:
-            # SERIAL: Poster va qismlar
             episodes = await db.get_episodes(code)
             await message.answer_photo(
                 photo=file_id,
                 caption=f"🎬 <b>{caption}</b>\n\n🍿 Qismni tanlang:",
-                reply_markup=get_episodes_kb(code, episodes)
+                reply_markup=get_episodes_kb(code, episodes, page=0)
             )
         else:
-            # KINO: Video va tugmalar
             await message.answer_video(
                 video=file_id, 
                 caption=caption,
@@ -104,7 +118,6 @@ async def movie_request(message: Message):
 
 @router.callback_query(F.data.startswith("ep_"))
 async def handle_episode_request(callback: CallbackQuery):
-    """Serial qismi tanlanganda videoni yuborish."""
     _, movie_code, part_num = callback.data.split("_")
     episodes = await db.get_episodes(movie_code)
     video_id = next((ep[1] for ep in episodes if str(ep[0]) == part_num), None)
@@ -123,24 +136,26 @@ async def handle_episode_request(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("rate_"))
 async def handle_rating(callback: CallbackQuery):
-    """Yulduzcha bosilganda bahoni saqlash va menyuga qaytish."""
     rating = callback.data.split("_")[1]
     movie_code = callback.data.split("_")[2]
     
     await db.add_rating(callback.from_user.id, movie_code, int(rating))
     
     movie = await db.get_movie(movie_code)
-    kb = get_episodes_kb(movie_code, await db.get_episodes(movie_code)) if movie[2] else get_movie_kb(movie_code)
+    if movie[2]:
+        episodes = await db.get_episodes(movie_code)
+        kb = get_episodes_kb(movie_code, episodes, page=0)
+    else:
+        kb = get_movie_kb(movie_code)
     
     await callback.message.edit_reply_markup(reply_markup=kb)
-    await callback.answer(f"Rahmat! Siz {rating} ball berdingiz ⭐", show_alert=False)
+    await callback.answer(f"Rahmat! Siz {rating} ball berdingiz ⭐")
 
 @router.callback_query(F.data.startswith("fav_add_"))
 async def handle_favorites_addition(callback: CallbackQuery):
-    """Mening kinolarimga rostdan qo'shish."""
     movie_code = callback.data.split("_")[2]
     await db.add_to_favorites(callback.from_user.id, movie_code)
-    await callback.answer("✅ 'Mening kinolarim' ro'yxatiga qo'shildi!", show_alert=True)
+    await callback.answer("✅ To'plamga qo'shildi!", show_alert=True)
 
 # --- OBUNA TEKSHIRUV ---
 
@@ -160,11 +175,11 @@ async def verify_subscription(callback: CallbackQuery, bot: Bot):
             break
 
     if all_joined:
-        await callback.answer("Tabriklaymiz, hamma kanallarga a'zo bo'ldingiz! ✅", show_alert=True)
+        await callback.answer("✅ Hamma kanallarga a'zo bo'ldingiz!", show_alert=True)
         await callback.message.delete() 
         await callback.message.answer("Endi kodni qaytadan yuborishingiz mumkin. 🍿")
     else:
-        await callback.answer("Siz hali barcha kanallarga a'zo bo'lmadingiz! ❌", show_alert=True)
+        await callback.answer("❌ Siz hali barcha kanallarga a'zo bo'lmadingiz!", show_alert=True)
 
 @router.message(F.text)
 async def non_code_request(message: Message):
