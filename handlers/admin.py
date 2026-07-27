@@ -42,13 +42,6 @@ class BroadcastState(StatesGroup):
 # YORDAMCHI FUNKSIYALAR
 # =========================================================
 
-def is_admin(user_id: int) -> bool:
-    """
-    Foydalanuvchi admin ekanini tekshiradi.
-    """
-    return user_id in ADMINS
-
-
 async def send_stats(target: Message):
     """
     Admin statistikasini chiqaradi.
@@ -73,7 +66,7 @@ async def distribute_message(
     """
     Admin yuborgan xabarni barcha foydalanuvchilarga tarqatadi.
 
-    copy_message ishlatilgani sababli quyidagilarni tarqata oladi:
+    copy_message orqali:
     - matn;
     - rasm;
     - video;
@@ -81,7 +74,9 @@ async def distribute_message(
     - audio;
     - hujjat;
     - sticker;
-    - boshqa Telegram xabar turlari.
+    - forward qilingan xabarlar
+
+    tarqatilishi mumkin.
     """
     users = await db.get_all_users()
 
@@ -89,6 +84,13 @@ async def distribute_message(
     success_count = 0
     failed_count = 0
     blocked_count = 0
+
+    if total == 0:
+        await bot.send_message(
+            admin_chat_id,
+            "ℹ️ Reklama yuborish uchun foydalanuvchilar topilmadi."
+        )
+        return
 
     status_message = await bot.send_message(
         admin_chat_id,
@@ -107,7 +109,6 @@ async def distribute_message(
             success_count += 1
 
         except TelegramRetryAfter as error:
-            # Telegram flood limit bersa, kerakli vaqt kutamiz
             await asyncio.sleep(error.retry_after)
 
             try:
@@ -130,7 +131,6 @@ async def distribute_message(
                 )
 
         except TelegramForbiddenError:
-            # Foydalanuvchi botni bloklagan yoki chatga kirish yo'q
             blocked_count += 1
 
         except TelegramBadRequest as error:
@@ -149,10 +149,8 @@ async def distribute_message(
                 error
             )
 
-        # Telegram limitiga tushmaslik uchun kichik pauza
         await asyncio.sleep(0.05)
 
-        # Har 100 ta foydalanuvchida statusni yangilash
         if index % 100 == 0:
             try:
                 await status_message.edit_text(
@@ -165,23 +163,18 @@ async def distribute_message(
             except TelegramBadRequest:
                 pass
 
+    result_text = (
+        "✅ <b>Reklama tarqatish yakunlandi!</b>\n\n"
+        f"👤 Jami foydalanuvchilar: <b>{total}</b>\n"
+        f"✅ Muvaffaqiyatli yuborildi: <b>{success_count}</b>\n"
+        f"🚫 Botni bloklagan: <b>{blocked_count}</b>\n"
+        f"❌ Yuborilmadi: <b>{failed_count}</b>"
+    )
+
     try:
-        await status_message.edit_text(
-            "✅ <b>Reklama tarqatish yakunlandi!</b>\n\n"
-            f"👤 Jami foydalanuvchilar: <b>{total}</b>\n"
-            f"✅ Muvaffaqiyatli yuborildi: <b>{success_count}</b>\n"
-            f"🚫 Botni bloklagan: <b>{blocked_count}</b>\n"
-            f"❌ Yuborilmadi: <b>{failed_count}</b>"
-        )
+        await status_message.edit_text(result_text)
     except TelegramBadRequest:
-        await bot.send_message(
-            admin_chat_id,
-            "✅ <b>Reklama tarqatish yakunlandi!</b>\n\n"
-            f"👤 Jami foydalanuvchilar: <b>{total}</b>\n"
-            f"✅ Muvaffaqiyatli yuborildi: <b>{success_count}</b>\n"
-            f"🚫 Botni bloklagan: <b>{blocked_count}</b>\n"
-            f"❌ Yuborilmadi: <b>{failed_count}</b>"
-        )
+        await bot.send_message(admin_chat_id, result_text)
 
 
 # =========================================================
@@ -209,54 +202,6 @@ async def admin_panel(message: Message, state: FSMContext):
 
 
 # =========================================================
-# ADMIN PANEL CALLBACK TUGMALARI
-# =========================================================
-
-@router.callback_query(
-    F.data == "admin_stats",
-    F.from_user.id.in_(ADMINS)
-)
-async def admin_stats_callback(callback: CallbackQuery):
-    """
-    Admin panelidagi Statistika tugmasi.
-    """
-    await callback.answer()
-
-    if callback.message:
-        await send_stats(callback.message)
-
-
-@router.callback_query(
-    F.data == "admin_broadcast",
-    F.from_user.id.in_(ADMINS)
-)
-async def admin_broadcast_callback(
-    callback: CallbackQuery,
-    state: FSMContext
-):
-    """
-    Admin panelidagi Reklama yuborish tugmasi.
-    """
-    await callback.answer()
-
-    await state.clear()
-    await state.set_state(BroadcastState.waiting_for_message)
-
-    if callback.message:
-        await callback.message.answer(
-            "📢 <b>Reklama yuborish rejimi</b>\n\n"
-            "Tarqatmoqchi bo'lgan xabaringizni yuboring.\n\n"
-            "Quyidagilarni yuborishingiz mumkin:\n"
-            "• matn;\n"
-            "• rasm va caption;\n"
-            "• video va caption;\n"
-            "• fayl;\n"
-            "• boshqa Telegram xabari.\n\n"
-            "Bekor qilish uchun: <code>/cancel</code>"
-        )
-
-
-# =========================================================
 # JARAYONNI BEKOR QILISH
 # =========================================================
 
@@ -266,13 +211,14 @@ async def cancel_admin_process(
     state: FSMContext
 ):
     """
-    Har qanday admin FSM jarayonini bekor qiladi.
+    Har qanday admin jarayonini bekor qiladi.
     """
     current_state = await state.get_state()
 
     if current_state is None:
         return await message.answer(
-            "ℹ️ Hozir faol jarayon mavjud emas."
+            "ℹ️ Hozir faol jarayon mavjud emas.",
+            reply_markup=admin_menu()
         )
 
     await state.clear()
@@ -284,234 +230,8 @@ async def cancel_admin_process(
 
 
 # =========================================================
-# YANGI ANIME YOKI SERIAL QO'SHISH
+# SERIAL QO'SHISHNI YAKUNLASH
 # =========================================================
-
-@router.message(Command("add"), F.from_user.id.in_(ADMINS))
-async def add_start(
-    message: Message,
-    state: FSMContext,
-    command: CommandObject
-):
-    """
-    Yangi anime yoki serial qo'shish jarayonini boshlaydi.
-    """
-    await state.clear()
-
-    if not command.args:
-        return await message.answer(
-            "❌ Kodni kiriting!\n"
-            "Masalan: <code>/add 1</code>"
-        )
-
-    code = command.args.strip()
-
-    if not code.isdigit():
-        return await message.answer(
-            "⚠️ <b>Xato!</b>\n"
-            "Kod faqat raqamlardan iborat bo'lishi kerak."
-        )
-
-    # Kod oldin ishlatilganini tekshiramiz
-    if await db.movie_exists(code):
-        return await message.answer(
-            f"⚠️ <b>{code}</b> kodida allaqachon anime mavjud!\n\n"
-            "Yangi anime qo'shish uchun boshqa kod tanlang.\n\n"
-            "Mavjud animeni o'chirish uchun:\n"
-            f"<code>/del {code}</code>"
-        )
-
-    await state.update_data(movie_code=code)
-
-    await message.answer(
-        f"🔢 Kodi: <b>{code}</b>\n\n"
-        "Yuklama turini tanlang:",
-        reply_markup=series_confirm_kb()
-    )
-
-    await state.set_state(MovieAdd.waiting_for_type)
-
-
-# =========================================================
-# SERIAL QO'SHISH
-# =========================================================
-
-@router.callback_query(
-    MovieAdd.waiting_for_type,
-    F.data == "type_series",
-    F.from_user.id.in_(ADMINS)
-)
-async def process_series_type(
-    callback: CallbackQuery,
-    state: FSMContext
-):
-    await callback.answer()
-
-    await state.update_data(is_series=1)
-
-    if callback.message:
-        await callback.message.edit_text(
-            "🖼 Serial uchun <b>muqova rasmini</b> yuboring:"
-        )
-
-    await state.set_state(MovieAdd.waiting_for_poster)
-
-
-@router.message(
-    MovieAdd.waiting_for_poster,
-    F.photo,
-    F.from_user.id.in_(ADMINS)
-)
-async def process_poster(
-    message: Message,
-    state: FSMContext
-):
-    data = await state.get_data()
-
-    # Bu handler faqat serial uchun ishlashi kerak
-    if data.get("is_series") != 1:
-        return
-
-    poster_id = message.photo[-1].file_id
-
-    await state.update_data(poster_id=poster_id)
-
-    await message.answer(
-        "✍️ Serial haqida <b>ta'rif</b> yuboring:"
-    )
-
-    await state.set_state(MovieAdd.waiting_for_caption)
-
-
-@router.message(
-    MovieAdd.waiting_for_poster,
-    F.from_user.id.in_(ADMINS)
-)
-async def wrong_poster_type(
-    message: Message,
-    state: FSMContext
-):
-    """
-    Serial poster bosqichida rasm o'rniga boshqa narsa yuborilsa.
-    """
-    data = await state.get_data()
-
-    if data.get("is_series") == 1:
-        await message.answer(
-            "⚠️ Iltimos, serial muqovasini <b>rasm</b> sifatida yuboring."
-        )
-
-
-@router.message(
-    MovieAdd.waiting_for_caption,
-    F.text,
-    F.from_user.id.in_(ADMINS)
-)
-async def process_caption(
-    message: Message,
-    state: FSMContext
-):
-    data = await state.get_data()
-
-    movie_code = data.get("movie_code")
-    poster_id = data.get("poster_id")
-    caption = message.text.strip()
-
-    if not caption:
-        return await message.answer(
-            "⚠️ Ta'rif bo'sh bo'lishi mumkin emas."
-        )
-
-    # Jarayon davomida boshqa admin bir xil kodni qo'shgan bo'lishi mumkin.
-    added = await db.add_movie(
-        code=movie_code,
-        file_id=poster_id,
-        caption=caption,
-        is_series=1
-    )
-
-    if not added:
-        await state.clear()
-
-        return await message.answer(
-            f"⚠️ <b>{movie_code}</b> kodi allaqachon mavjud.\n\n"
-            "Serial saqlanmadi. Boshqa kod bilan qayta urinib ko'ring."
-        )
-
-    await state.update_data(ep_count=0)
-
-    await message.answer(
-        "✅ Serialning asosiy ma'lumoti yaratildi!\n\n"
-        "Endi <b>1-qism videosini</b> yuboring.\n\n"
-        "Barcha qismlarni yuborib bo'lgach:\n"
-        "<code>/finish</code>"
-    )
-
-    await state.set_state(MovieAdd.waiting_for_episodes)
-
-
-@router.message(
-    MovieAdd.waiting_for_caption,
-    F.from_user.id.in_(ADMINS)
-)
-async def wrong_caption_type(message: Message):
-    """
-    Caption o'rniga boshqa xabar yuborilsa.
-    """
-    await message.answer(
-        "⚠️ Serial ta'rifini oddiy <b>matn</b> sifatida yuboring."
-    )
-
-
-@router.message(
-    MovieAdd.waiting_for_episodes,
-    F.video,
-    F.from_user.id.in_(ADMINS)
-)
-async def process_episode(
-    message: Message,
-    state: FSMContext
-):
-    data = await state.get_data()
-
-    movie_code = data.get("movie_code")
-    current_count = int(data.get("ep_count", 0))
-    new_count = current_count + 1
-
-    added = await db.add_episode(
-        code=movie_code,
-        part=new_count,
-        file_id=message.video.file_id
-    )
-
-    if not added:
-        return await message.answer(
-            f"⚠️ {new_count}-qismni saqlab bo'lmadi.\n\n"
-            "Bu qism oldin saqlangan yoki anime kodi topilmadi."
-        )
-
-    await state.update_data(ep_count=new_count)
-
-    await message.answer(
-        f"✅ <b>{new_count}-qism</b> saqlandi!\n\n"
-        "Keyingi qismni yuboring yoki "
-        "<code>/finish</code> buyrug'ini bosing."
-    )
-
-
-@router.message(
-    MovieAdd.waiting_for_episodes,
-    F.from_user.id.in_(ADMINS)
-)
-async def wrong_episode_type(message: Message):
-    """
-    Serial qismi o'rniga video bo'lmagan xabar yuborilsa.
-    """
-    await message.answer(
-        "⚠️ Iltimos, serial qismini <b>video</b> sifatida yuboring.\n\n"
-        "Tugatish uchun: <code>/finish</code>"
-    )
-
 
 @router.message(
     Command("finish"),
@@ -522,7 +242,14 @@ async def process_finish(
     message: Message,
     state: FSMContext
 ):
+    """
+    Serial qismlarini qo'shish jarayonini tugatadi.
+
+    Bu handler umumiy waiting_for_episodes handleridan
+    oldin turishi shart.
+    """
     data = await state.get_data()
+
     episode_count = int(data.get("ep_count", 0))
     movie_code = data.get("movie_code")
 
@@ -537,72 +264,8 @@ async def process_finish(
     await message.answer(
         "🚀 <b>Barcha qismlar muvaffaqiyatli saqlandi!</b>\n\n"
         f"🔢 Anime kodi: <code>{movie_code}</code>\n"
-        f"🎞 Qismlar soni: <b>{episode_count}</b>"
-    )
-
-
-# =========================================================
-# ODDIY VIDEO QO'SHISH
-# =========================================================
-
-@router.callback_query(
-    MovieAdd.waiting_for_type,
-    F.data == "type_movie",
-    F.from_user.id.in_(ADMINS)
-)
-async def process_movie_type(
-    callback: CallbackQuery,
-    state: FSMContext
-):
-    await callback.answer()
-
-    await state.update_data(is_series=0)
-
-    if callback.message:
-        await callback.message.edit_text(
-            "🎞 Animeni <b>video</b> sifatida yuboring.\n\n"
-            "Video caption'i anime ta'rifi sifatida saqlanadi."
-        )
-
-    await state.set_state(MovieAdd.waiting_for_poster)
-
-
-@router.message(
-    MovieAdd.waiting_for_poster,
-    F.video,
-    F.from_user.id.in_(ADMINS)
-)
-async def process_movie_video(
-    message: Message,
-    state: FSMContext
-):
-    data = await state.get_data()
-
-    # Bu handler faqat oddiy anime uchun ishlashi kerak
-    if data.get("is_series") != 0:
-        return
-
-    movie_code = data.get("movie_code")
-    caption = message.caption or "Yoqimli tomosha!"
-
-    added = await db.add_movie(
-        code=movie_code,
-        file_id=message.video.file_id,
-        caption=caption,
-        is_series=0
-    )
-
-    await state.clear()
-
-    if not added:
-        return await message.answer(
-            f"⚠️ <b>{movie_code}</b> kodi allaqachon mavjud.\n\n"
-            "Video saqlanmadi. Boshqa kod tanlang."
-        )
-
-    await message.answer(
-        "✅ <b>Video muvaffaqiyatli saqlandi!</b>\n\n"
-        f"🔢 Kodi: <code>{movie_code}</code>"
+        f"🎞 Qismlar soni: <b>{episode_count}</b>",
+        reply_markup=admin_menu()
     )
 
 
@@ -613,11 +276,15 @@ async def process_movie_video(
 @router.message(Command("del"), F.from_user.id.in_(ADMINS))
 async def delete_movie_handler(
     message: Message,
+    state: FSMContext,
     command: CommandObject
 ):
     """
-    Anime, qismlar, reyting va favorites yozuvlarini to'liq o'chiradi.
+    Anime, qismlar, reytinglar va favorites yozuvlarini
+    to'liq o'chiradi.
     """
+    await state.clear()
+
     if not command.args:
         return await message.answer(
             "❌ Kodni yozing.\n"
@@ -631,16 +298,32 @@ async def delete_movie_handler(
             "⚠️ Kod faqat raqamlardan iborat bo'lishi kerak."
         )
 
-    deleted = await db.delete_movie(code)
+    movie_before = await db.get_movie(code)
 
-    if not deleted:
+    if movie_before is None:
         return await message.answer(
             f"ℹ️ <b>{code}</b> kodida anime topilmadi."
         )
 
+    episodes_before = await db.get_episodes(code)
+
+    deleted = await db.delete_movie(code)
+
+    movie_after = await db.get_movie(code)
+    episodes_after = await db.get_episodes(code)
+
+    if deleted and movie_after is None and len(episodes_after) == 0:
+        return await message.answer(
+            f"🗑 <b>{code}</b> kodidagi anime to'liq o'chirildi.\n\n"
+            f"🎞 O'chirilgan qismlar: <b>{len(episodes_before)}</b>\n"
+            "⭐ Reytinglar va saqlanganlar ham tozalandi."
+        )
+
     await message.answer(
-        f"🗑 <b>{code}</b> kodidagi anime to'liq o'chirildi.\n\n"
-        "Unga tegishli qismlar, reytinglar va saqlanganlar ham tozalandi."
+        "❌ <b>O'chirish yakunlanmadi.</b>\n\n"
+        f"Kod: <code>{code}</code>\n"
+        f"Anime hali mavjud: <code>{movie_after is not None}</code>\n"
+        f"Qolgan qismlar: <code>{len(episodes_after)}</code>"
     )
 
 
@@ -651,11 +334,15 @@ async def delete_movie_handler(
 @router.message(Command("delpart"), F.from_user.id.in_(ADMINS))
 async def delete_part_handler(
     message: Message,
+    state: FSMContext,
     command: CommandObject
 ):
     """
-    Faqat bitta qismni o'chiradi va qolganlarini qayta raqamlaydi.
+    Bitta qismni o'chiradi va qolgan qismlarni
+    qayta raqamlaydi.
     """
+    await state.clear()
+
     if not command.args:
         return await message.answer(
             "❌ Format:\n"
@@ -706,10 +393,13 @@ async def delete_part_handler(
             f"<b>{part}-qism</b> topilmadi."
         )
 
+    remaining_episodes = await db.get_episodes(code)
+
     await message.answer(
         f"✅ <b>{code}</b> kodidagi "
         f"<b>{part}-qism</b> o'chirildi.\n\n"
-        "Qolgan qismlar 1, 2, 3... tartibida qayta raqamlandi."
+        "Qolgan qismlar 1, 2, 3... tartibida qayta raqamlandi.\n"
+        f"🎞 Hozirgi qismlar soni: <b>{len(remaining_episodes)}</b>"
     )
 
 
@@ -734,9 +424,9 @@ async def broadcast_handler(
     command: CommandObject
 ):
     """
-    /broadcast XABAR ko'rinishida matn tarqatadi.
+    /broadcast XABAR orqali matn tarqatadi.
 
-    Agar argument bo'lmasa, reklama kutish rejimini yoqadi.
+    Argument bo'lmasa, keyingi xabarni kutadi.
     """
     await state.clear()
 
@@ -748,24 +438,28 @@ async def broadcast_handler(
         return await message.answer(
             "📢 <b>Reklama yuborish rejimi</b>\n\n"
             "Endi tarqatmoqchi bo'lgan xabaringizni yuboring.\n\n"
-            "Matn, rasm, video yoki fayl yuborishingiz mumkin.\n\n"
+            "Matn, rasm, video, forward yoki fayl yuborishingiz mumkin.\n\n"
             "Bekor qilish: <code>/cancel</code>"
         )
 
-    # /broadcast dan keyingi matnni alohida xabar qilib yaratamiz.
-    # Bu usul oddiy matnli broadcast uchun ishlaydi.
     users = await db.get_all_users()
 
+    total = len(users)
     success_count = 0
     failed_count = 0
     blocked_count = 0
 
+    if total == 0:
+        return await message.answer(
+            "ℹ️ Reklama yuborish uchun foydalanuvchilar topilmadi."
+        )
+
     status_message = await message.answer(
         "📢 Reklama tarqatish boshlandi...\n\n"
-        f"👤 Jami foydalanuvchilar: <b>{len(users)}</b>"
+        f"👤 Jami foydalanuvchilar: <b>{total}</b>"
     )
 
-    for user_id in users:
+    for index, user_id in enumerate(users, start=1):
         try:
             await bot.send_message(
                 chat_id=user_id,
@@ -787,8 +481,13 @@ async def broadcast_handler(
             except TelegramForbiddenError:
                 blocked_count += 1
 
-            except Exception:
+            except Exception as retry_error:
                 failed_count += 1
+                logger.warning(
+                    "Text broadcast retry error. user_id=%s error=%s",
+                    user_id,
+                    retry_error
+                )
 
         except TelegramForbiddenError:
             blocked_count += 1
@@ -803,9 +502,22 @@ async def broadcast_handler(
 
         await asyncio.sleep(0.05)
 
+        if index % 100 == 0:
+            try:
+                await status_message.edit_text(
+                    "📢 Reklama tarqatilmoqda...\n\n"
+                    f"⏳ Jarayon: <b>{index}/{total}</b>\n"
+                    f"✅ Yuborildi: <b>{success_count}</b>\n"
+                    f"🚫 Botni bloklagan: <b>{blocked_count}</b>\n"
+                    f"❌ Xatolik: <b>{failed_count}</b>"
+                )
+            except TelegramBadRequest:
+                pass
+
     try:
         await status_message.edit_text(
             "✅ <b>Reklama tarqatish yakunlandi!</b>\n\n"
+            f"👤 Jami foydalanuvchilar: <b>{total}</b>\n"
             f"✅ Yuborildi: <b>{success_count}</b>\n"
             f"🚫 Botni bloklagan: <b>{blocked_count}</b>\n"
             f"❌ Xatolik: <b>{failed_count}</b>"
@@ -815,7 +527,383 @@ async def broadcast_handler(
 
 
 # =========================================================
-# TUGMA ORQALI REKLAMA YUBORISH
+# ADMIN PANEL CALLBACK TUGMALARI
+# =========================================================
+
+@router.callback_query(
+    F.data == "admin_stats",
+    F.from_user.id.in_(ADMINS)
+)
+async def admin_stats_callback(callback: CallbackQuery):
+    """
+    Admin panelidagi Statistika tugmasi.
+    """
+    await callback.answer()
+
+    if callback.message:
+        await send_stats(callback.message)
+
+
+@router.callback_query(
+    F.data == "admin_broadcast",
+    F.from_user.id.in_(ADMINS)
+)
+async def admin_broadcast_callback(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+    """
+    Admin panelidagi Reklama yuborish tugmasi.
+    """
+    await callback.answer()
+
+    await state.clear()
+    await state.set_state(BroadcastState.waiting_for_message)
+
+    if callback.message:
+        await callback.message.answer(
+            "📢 <b>Reklama yuborish rejimi</b>\n\n"
+            "Tarqatmoqchi bo'lgan xabaringizni yuboring.\n\n"
+            "Quyidagilarni yuborishingiz mumkin:\n"
+            "• matn;\n"
+            "• rasm va caption;\n"
+            "• video va caption;\n"
+            "• kanaldan forward;\n"
+            "• fayl;\n"
+            "• boshqa Telegram xabari.\n\n"
+            "Bekor qilish uchun: <code>/cancel</code>"
+        )
+
+
+# =========================================================
+# YANGI ANIME YOKI SERIAL QO'SHISH
+# =========================================================
+
+@router.message(Command("add"), F.from_user.id.in_(ADMINS))
+async def add_start(
+    message: Message,
+    state: FSMContext,
+    command: CommandObject
+):
+    """
+    Yangi anime yoki serial qo'shish jarayonini boshlaydi.
+    """
+    await state.clear()
+
+    if not command.args:
+        return await message.answer(
+            "❌ Kodni kiriting!\n"
+            "Masalan: <code>/add 1</code>"
+        )
+
+    code = command.args.strip()
+
+    if not code.isdigit():
+        return await message.answer(
+            "⚠️ <b>Xato!</b>\n"
+            "Kod faqat raqamlardan iborat bo'lishi kerak."
+        )
+
+    if await db.movie_exists(code):
+        return await message.answer(
+            f"⚠️ <b>{code}</b> kodida allaqachon anime mavjud!\n\n"
+            "Yangi anime qo'shish uchun boshqa kod tanlang.\n\n"
+            "Mavjud animeni o'chirish uchun:\n"
+            f"<code>/del {code}</code>"
+        )
+
+    await state.update_data(movie_code=code)
+
+    await message.answer(
+        f"🔢 Kodi: <b>{code}</b>\n\n"
+        "Yuklama turini tanlang:",
+        reply_markup=series_confirm_kb()
+    )
+
+    await state.set_state(MovieAdd.waiting_for_type)
+
+
+# =========================================================
+# ANIME YOKI SERIAL TURINI TANLASH
+# =========================================================
+
+@router.callback_query(
+    MovieAdd.waiting_for_type,
+    F.data == "type_series",
+    F.from_user.id.in_(ADMINS)
+)
+async def process_series_type(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+    await callback.answer()
+
+    await state.update_data(is_series=1)
+
+    if callback.message:
+        await callback.message.edit_text(
+            "🖼 Serial uchun <b>muqova rasmini</b> yuboring:"
+        )
+
+    await state.set_state(MovieAdd.waiting_for_poster)
+
+
+@router.callback_query(
+    MovieAdd.waiting_for_type,
+    F.data == "type_movie",
+    F.from_user.id.in_(ADMINS)
+)
+async def process_movie_type(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+    await callback.answer()
+
+    await state.update_data(is_series=0)
+
+    if callback.message:
+        await callback.message.edit_text(
+            "🎞 Animeni <b>video</b> sifatida yuboring.\n\n"
+            "Videoni kanaldan forward qilishingiz ham mumkin.\n"
+            "Video caption'i anime ta'rifi sifatida saqlanadi."
+        )
+
+    await state.set_state(MovieAdd.waiting_for_poster)
+
+
+# =========================================================
+# POSTER YOKI ODDIY VIDEO QABUL QILISH
+# =========================================================
+
+@router.message(
+    MovieAdd.waiting_for_poster,
+    F.photo,
+    F.from_user.id.in_(ADMINS)
+)
+async def process_poster(
+    message: Message,
+    state: FSMContext
+):
+    """
+    Serial uchun poster rasmini qabul qiladi.
+    """
+    data = await state.get_data()
+
+    if data.get("is_series") != 1:
+        return await message.answer(
+            "⚠️ Oddiy anime uchun rasm emas, video yuboring."
+        )
+
+    poster_id = message.photo[-1].file_id
+
+    await state.update_data(poster_id=poster_id)
+
+    await message.answer(
+        "✍️ Serial haqida <b>ta'rif</b> yuboring:"
+    )
+
+    await state.set_state(MovieAdd.waiting_for_caption)
+
+
+@router.message(
+    MovieAdd.waiting_for_poster,
+    F.video,
+    F.from_user.id.in_(ADMINS)
+)
+async def process_movie_video(
+    message: Message,
+    state: FSMContext
+):
+    """
+    Oddiy anime videosini qabul qiladi.
+
+    Kanaldan forward qilingan video ham F.video sifatida keladi.
+    """
+    data = await state.get_data()
+
+    if data.get("is_series") != 0:
+        return await message.answer(
+            "⚠️ Serial uchun avval muqova rasmini yuboring."
+        )
+
+    movie_code = data.get("movie_code")
+    caption = message.caption or "Yoqimli tomosha!"
+
+    added = await db.add_movie(
+        code=movie_code,
+        file_id=message.video.file_id,
+        caption=caption,
+        is_series=0
+    )
+
+    if not added:
+        await state.clear()
+
+        return await message.answer(
+            f"⚠️ <b>{movie_code}</b> kodi allaqachon mavjud.\n\n"
+            "Video saqlanmadi. Boshqa kod tanlang."
+        )
+
+    await state.clear()
+
+    await message.answer(
+        "✅ <b>Video muvaffaqiyatli saqlandi!</b>\n\n"
+        f"🔢 Kodi: <code>{movie_code}</code>",
+        reply_markup=admin_menu()
+    )
+
+
+@router.message(
+    MovieAdd.waiting_for_poster,
+    F.from_user.id.in_(ADMINS)
+)
+async def wrong_poster_or_movie_type(
+    message: Message,
+    state: FSMContext
+):
+    """
+    Poster yoki video bosqichida noto'g'ri format yuborilsa.
+    """
+    data = await state.get_data()
+
+    if data.get("is_series") == 1:
+        await message.answer(
+            "⚠️ Serial uchun muqovani <b>rasm</b> sifatida yuboring."
+        )
+    else:
+        await message.answer(
+            "⚠️ Oddiy anime uchun <b>video</b> yuboring.\n\n"
+            "Videoni kanaldan forward qilish ham mumkin."
+        )
+
+
+# =========================================================
+# SERIAL CAPTION QABUL QILISH
+# =========================================================
+
+@router.message(
+    MovieAdd.waiting_for_caption,
+    F.text,
+    F.from_user.id.in_(ADMINS)
+)
+async def process_caption(
+    message: Message,
+    state: FSMContext
+):
+    data = await state.get_data()
+
+    movie_code = data.get("movie_code")
+    poster_id = data.get("poster_id")
+    caption = message.text.strip()
+
+    if not caption:
+        return await message.answer(
+            "⚠️ Ta'rif bo'sh bo'lishi mumkin emas."
+        )
+
+    added = await db.add_movie(
+        code=movie_code,
+        file_id=poster_id,
+        caption=caption,
+        is_series=1
+    )
+
+    if not added:
+        await state.clear()
+
+        return await message.answer(
+            f"⚠️ <b>{movie_code}</b> kodi allaqachon mavjud.\n\n"
+            "Serial saqlanmadi. Boshqa kod bilan qayta urinib ko'ring."
+        )
+
+    await state.update_data(ep_count=0)
+
+    await message.answer(
+        "✅ Serialning asosiy ma'lumoti yaratildi!\n\n"
+        "Endi <b>1-qism videosini</b> yuboring.\n"
+        "Videoni kanaldan forward qilishingiz mumkin.\n\n"
+        "Barcha qismlarni yuborib bo'lgach:\n"
+        "<code>/finish</code>"
+    )
+
+    await state.set_state(MovieAdd.waiting_for_episodes)
+
+
+@router.message(
+    MovieAdd.waiting_for_caption,
+    F.from_user.id.in_(ADMINS)
+)
+async def wrong_caption_type(message: Message):
+    await message.answer(
+        "⚠️ Serial ta'rifini oddiy <b>matn</b> sifatida yuboring."
+    )
+
+
+# =========================================================
+# SERIAL QISMLARINI QABUL QILISH
+# =========================================================
+
+@router.message(
+    MovieAdd.waiting_for_episodes,
+    F.video,
+    F.from_user.id.in_(ADMINS)
+)
+async def process_episode(
+    message: Message,
+    state: FSMContext
+):
+    """
+    Serial qismini saqlaydi.
+
+    Kanaldan forward qilingan video ham message.video sifatida keladi.
+    Database ichida faqat Telegram file_id saqlanadi.
+    """
+    data = await state.get_data()
+
+    movie_code = data.get("movie_code")
+    current_count = int(data.get("ep_count", 0))
+    new_count = current_count + 1
+
+    added = await db.add_episode(
+        code=movie_code,
+        part=new_count,
+        file_id=message.video.file_id
+    )
+
+    if not added:
+        return await message.answer(
+            f"⚠️ {new_count}-qismni saqlab bo'lmadi.\n\n"
+            "Bu qism raqami oldin saqlangan yoki anime kodi topilmadi."
+        )
+
+    await state.update_data(ep_count=new_count)
+
+    await message.answer(
+        f"✅ <b>{new_count}-qism</b> saqlandi!\n\n"
+        "Keyingi videoni yuboring yoki kanaldan forward qiling.\n"
+        "Tugatish uchun: <code>/finish</code>"
+    )
+
+
+@router.message(
+    MovieAdd.waiting_for_episodes,
+    F.from_user.id.in_(ADMINS)
+)
+async def wrong_episode_type(message: Message):
+    """
+    Serial qismi o'rniga boshqa turdagi xabar yuborilsa.
+
+    /finish handleri ushbu handlerdan yuqorida ro'yxatdan o'tgan.
+    """
+    await message.answer(
+        "⚠️ Serial qismini <b>video</b> sifatida yuboring "
+        "yoki kanaldan forward qiling.\n\n"
+        "Tugatish uchun: <code>/finish</code>"
+    )
+
+
+# =========================================================
+# TUGMA ORQALI REKLAMA XABARINI QABUL QILISH
 # =========================================================
 
 @router.message(
@@ -828,14 +916,12 @@ async def receive_broadcast_message(
     state: FSMContext
 ):
     """
-    Admin panelidagi Reklama yuborish tugmasidan keyin
-    yuborilgan xabarni barcha foydalanuvchilarga tarqatadi.
+    Reklama tugmasidan keyin yuborilgan xabarni tarqatadi.
     """
-    # Komandalarni reklama qilib tarqatmaymiz
     if message.text and message.text.startswith("/"):
         return await message.answer(
             "⚠️ Reklama sifatida komanda yuborib bo'lmaydi.\n\n"
-            "Oddiy matn, rasm, video yoki fayl yuboring.\n"
+            "Oddiy matn, rasm, video, forward yoki fayl yuboring.\n"
             "Bekor qilish: <code>/cancel</code>"
         )
 
